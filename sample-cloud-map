@@ -1,0 +1,5 @@
+minion-4gb:
+  - james-mysql-single-1:
+      grains:
+        roles:
+          - mysql_single
