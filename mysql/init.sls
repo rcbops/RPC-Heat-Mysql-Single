@@ -8,7 +8,7 @@ mysql-software:
   file.managed:
     - name: /etc/mysql/my.cnf
     - template: jinja
-    - source: salt://lamp/mysql/files/mysql.cnf
+    - source: salt://mysql_single/mysql/files/mysql.cnf
     - user: root
     - group: root
     - mode: 644
@@ -35,7 +35,7 @@ root_db_user:
 
 /root/.my.cnf:
   file.managed:
-    - source: salt://lamp/mysql/files/root.cnf
+    - source: salt://mysql_single/mysql/files/root.cnf
     - template: jinja
     - mode: 700
     - defaults:

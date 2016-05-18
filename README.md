@@ -1,2 +1,2 @@
-# heat-lamp
-Heat template and salt formula for a simple lamp stack
+# heat-mysql-single
+Heat template and salt formula for a single mysql server.

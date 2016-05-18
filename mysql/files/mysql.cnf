@@ -126,10 +126,6 @@ sync_binlog		= 1
 max_connections         = 200
 server-id		= {{ grains['server_id'] }}
 
-{% if 'lamp-mysql-master' in grains.get('roles', []) %}
-log-bin			= mysql-bin
-{% endif %}
-
 [mysqldump]
 quick
 quote-names

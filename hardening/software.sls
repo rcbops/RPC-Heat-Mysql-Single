@@ -1,6 +1,6 @@
 postfix-preseed:
   debconf.set_file:
-    - source: salt://lamp/hardening/files/postfix.preseed.jinja2
+    - source: salt://mysql_single/hardening/files/postfix.preseed.jinja2
     - template: jinja
 
 software-requirements:
@@ -21,6 +21,6 @@ install psad:
   file:
     - managed
     - template: jinja
-    - source: salt://lamp/hardening/cron.daily/00logwatch
+    - source: salt://mysql_single/hardening/cron.daily/00logwatch
     - require:
       - pkg: software-requirements

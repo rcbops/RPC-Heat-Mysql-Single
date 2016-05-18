@@ -1,5 +1,5 @@
 include:
-  - lamp.hardening.sysctl
-  - lamp.hardening.common
-  - lamp.hardening.software
-  - lamp.hardening.firewall
+  - mysql_single.hardening.sysctl
+  - mysql_single.hardening.common
+  - mysql_single.hardening.software
+  - mysql_single.hardening.firewall
