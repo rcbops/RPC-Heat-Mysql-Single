@@ -131,7 +131,7 @@ resources:
 
         # Install salt-master and git
         echo "Install Salt Master"
-        add-apt-repository ppa:saltstack/salt2015-5
+        add-apt-repository -y ppa:saltstack/salt2015-5
         apt-get update
         apt-get install -y git salt-master salt-minion
 
