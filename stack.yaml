@@ -1,0 +1,310 @@
+heat_template_version: 2015-04-30
+
+description: |
+  Deploys a single mysql server.
+
+parameter_groups:
+  - label: Sizing and location
+    description: What networks and how large of a vm.
+    parameters:
+      - keyname
+      - image
+      - flavor
+      - apps-network
+
+  - label: MySQL Database/User information.
+    description: Provide some information to create a MySQL database and user.
+    parameters:
+      - mysql-username
+      - mysql-password
+      - mysql-db-name
+
+  - label: Don't touch
+    description: These parameters should be left default except in special cases.
+    parameters:
+      - git-formula-repo
+
+parameters:
+
+  keyname:
+    type: string
+    label: SSH Keypair name.
+    description: Name of the ssh key used to ssh into mysql server.
+
+  image:
+    type: string
+    label: Image Name
+    description: Name of the trusty image that contains software config heat elements.
+
+  flavor:
+    type: string
+    label: Flavor
+    description: Flavor (size) for all virtual machines in this stack.
+    default: m1.small
+
+  apps-network:
+    type: string
+    label: Apps Network Name
+    description: Name of the apps network where your applications live.
+    default: changeme
+
+  git-formula-repo:
+    type: string
+    label: Mysql Formula Repo
+    description: Formula git repository. This should remain as default except for development.
+    default: https://github.com/rcbops/RPC-Heat-Mysql-Single.git
+
+  mysql-username:
+    type: string
+    label: MySQL Username
+    description: Name of a MySQL user to create.
+    default: dbuser
+
+  mysql-password:
+    type: string
+    label: MySQL Password
+    description: Password for the created MySQL user.
+    default: changeme
+
+  mysql-db-name:
+    type: string
+    label: MySQL Database Name
+    description: Name of the MySQL database to create.
+
+resources:
+
+  # Security group
+  secgroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name:
+        str_replace:
+          template: mysql-single-$stack_name$
+          params:
+            $stack_name$:
+              get_param: OS::stack_name
+      rules:
+        - protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+        - protocol: tcp
+          port_range_min: 3306
+          port_range_max: 3306
+        - protocol: tcp
+          port_range_min: 4505
+          port_range_max: 4506
+
+  # One port for the mysql server
+  mysql-port:
+    type: OS::Neutron::Port
+    properties:
+      name:
+        str_replace:
+          template: mysql_single_port_$stack_name$
+          params:
+            $stack_name$:
+              get_param: OS::stack_name
+      network:
+        get_param: apps-network
+      security_groups:
+        - get_resource: secgroup
+
+  # Software configuration script for the salt-master
+  # Installs salt-master, sets permission on some personality files
+  # and uses git to clone any provided state/formula repos
+  config-mysql:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      inputs:
+        - name: git_formula_repo
+      config: |
+        #!/bin/bash
+        set -ex
+        logdir=/var/log/heat-deployments
+        prefix=${logdir}/config-mysql
+        mkdir -p $logdir
+        exec &> >(tee -a ${prefix}.log)
+
+        [ -e ${prefix}.ran ] && exit 0
+        chmod -R 0600 ${logdir}
+
+        # Install salt-master and git
+        echo "Install Salt Master"
+        add-apt-repository ppa:saltstack/salt2015-5
+        apt-get update
+        apt-get install -y git salt-master salt-minion
+
+        mkdir -p /srv/salt
+        echo -e 'file_roots:\n  base:\n    - /srv/salt' >> /etc/salt/master
+
+        git clone "${git_formula_repo}" /srv/salt/mysql_single
+
+        # Finally - Restart salt service
+        service salt-master restart
+
+        # Install salt minion
+        echo master: localhost >> /etc/salt/minion
+        echo "roles: [mysql_single]" >> /etc/salt/grains
+        service salt-minion restart
+
+        MASTER_PKI_PATH="/etc/salt/pki/master/minions/"
+        MASTER_PKI_PATH_PRE="/etc/salt/pki/master/minions_pre/"
+        MINION_PKI_PATH="/etc/salt/pki/minion/minion.pub"
+        HOSTNAME="$(python  -c 'import socket; print socket.getfqdn()')"
+
+        while [ ! -s ${MINION_PKI_PATH} ]; do
+            echo "Waiting for ${MINION_PKI_PATH} to have non-zero content."
+            sleep 2
+        done
+
+        cp $MINION_PKI_PATH $MASTER_PKI_PATH$HOSTNAME;
+        chmod 700 $MASTER_PKI_PATH$HOSTNAME;
+        if [ -f $MASTER_PKI_PATH_PRE$HOSTNAME];
+        then
+          rm $MASTER_PKI_PATH_PRE$HOSTNAME
+        fi
+        service salt-minion restart
+        sleep 10
+
+        salt -G roles:mysql_single state.highstate
+        salt -G roles:mysql_single state.sls mysql_single.hardening
+
+        touch ${prefix}.ran
+
+  # Software deployment for salt-master. Deploys the salt-master software
+  # configuration.
+  deploy-mysql:
+    type: OS::Heat::SoftwareDeployment
+    properties:
+      input_values:
+        git_formula_repo:
+          get_param: git-formula-repo
+      config:
+        get_resource: config-mysql
+      server:
+        get_resource: mysql
+
+  # The salt master instance
+  # Should have one floating ip
+  mysql:
+    type: OS::Nova::Server
+    properties:
+      key_name:
+        get_param: keyname
+      image:
+        get_param: image
+      flavor:
+        get_param: flavor
+      name:
+        str_replace:
+          template: mysql-single-$stack_name$
+          params:
+            $stack_name$:
+              get_param: OS::stack_name
+
+      personality:
+
+        # The top.sls file for salt states.
+        # Dictates which minions get which formulas
+        /srv/salt/top.sls: |
+          base:
+            'roles:mysql_single':
+              - match: grain
+              - mysql_single.mysql
+              - mysql_single.mysql.bootstrap
+
+        # The top.sls file for salt pillars.
+        # Dictates which minions get which pillars.
+        /srv/pillar/top.sls: |
+          base:
+            'roles:mysql_single':
+              - match: grain
+              - mysql_single
+
+        # The app pillar. Describe interfaces and salt-mine functions.
+        /srv/pillar/mysql_single.sls:
+          str_replace:
+            params:
+              $mysql-db-name$:
+                get_param: mysql-db-name
+              $mysql-username$:
+                get_param: mysql-username
+              $mysql-password$:
+                get_param: mysql-password
+            template: |
+              mysql_single:
+                db:
+                  name: '$mysql-db-name$'
+                user:
+                  username: '$mysql-username$'
+                  password: '$mysql-password$'
+                  host: "'%'"
+
+              interfaces:
+                public: eth0
+                private: eth0
+
+              user-ports:
+                ssh:
+                  chain: INPUT
+                  proto: tcp
+                  dport: 22
+                salt-master:
+                  chain: INPUT
+                  proto: tcp
+                  dport: 4505
+                salt-minion:
+                  chain: INPUT
+                  proto: tcp
+                  dport: 4506
+                mysql:
+                  chain: INPUT
+                  proto: tcp
+                  dport: 3306
+
+      # Get access from the master-port
+      networks:
+        - port:
+            get_resource: mysql-port
+
+      # Using SoftwareConfigs - This needs to be set to SOFTWARE_CONFIG
+      user_data_format: SOFTWARE_CONFIG
+
+outputs:
+  mysql-ip:
+    description: The ip address of the MySQL server.
+    value:
+      get_attr:
+        - mysql
+        - first_address
+
+  mysql-port:
+    description: The MySQL port.
+    value: 3306
+
+  mysql-username:
+    description: The MySQL username.
+    value:
+      get_param: mysql-username
+
+  mysql-password:
+    description: The MySQL password.
+    value:
+      get_param: mysql-password
+
+  mysql-database:
+    description: The MySQL database name.
+    value:
+      get_param: mysql-db-name
+
+  ssh_access:
+    description: How to ssh into the mysql server.
+    value:
+      str_replace:
+        template: ssh ubuntu@$mysql-ip$
+        params:
+          $mysql-ip$:
+            get_attr:
+              - mysql
+              - first_address
