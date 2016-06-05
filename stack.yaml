@@ -133,7 +133,7 @@ resources:
         echo "Install Salt Master"
         add-apt-repository -y ppa:saltstack/salt2015-5
         apt-get update
-        apt-get install -y git salt-master salt-minion
+        apt-get install -y --force-yes git salt-master salt-minion
 
         mkdir -p /srv/salt
         echo -e 'file_roots:\n  base:\n    - /srv/salt' >> /etc/salt/master
