@@ -1,0 +1,14 @@
+{% set user_dict = salt['pillar.get']("mysql_single:user", {}) %}
+{% set user = {
+    'username': user_dict.get('username', 'username'),
+    'password': user_dict.get('password', 'changeme'),
+    'host': user_dict.get('host', "'%'")
+} %}
+{% set db_dict = salt['pillar.get']("mysql_single:db", {}) %}
+{% set db = {
+    'name': db_dict.get('name', 'adatabase')
+} %}
+{% set mysql = {
+    'db': db,
+    'user': user
+} %}
