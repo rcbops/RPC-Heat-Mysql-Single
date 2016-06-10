@@ -160,7 +160,7 @@ resources:
 
         cp $MINION_PKI_PATH $MASTER_PKI_PATH$HOSTNAME;
         chmod 700 $MASTER_PKI_PATH$HOSTNAME;
-        if [ -f $MASTER_PKI_PATH_PRE$HOSTNAME];
+        if [ -f $MASTER_PKI_PATH_PRE$HOSTNAME ];
         then
           rm $MASTER_PKI_PATH_PRE$HOSTNAME
         fi
